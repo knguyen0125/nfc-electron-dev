@@ -52,7 +52,7 @@ function nfcHandler() {
 
   // Relay information to renderer
   nfcWrapper.on('operation-complete', (payload) => {
-    console.log(payload);
+    // console.log(payload);
     mainWindow.webContents.send('operation-complete', payload);
   });
 
@@ -69,29 +69,29 @@ function nfcHandler() {
   // });
 
   ipcMain.on('set-read', (event, args) => {
-    console.log('read', args);
+    // console.log('read', args);
     nfcWrapper.setAllowRead(args);
   });
 
   ipcMain.on('set-write', (event, args) => {
-    console.log('write', args);
+    // console.log('write', args);
     nfcWrapper.setAllowWrite(args);
   });
 
   ipcMain.on('set-write-readonly', (event, args) => {
-    console.log('readonly', args);
+    // console.log('readonly', args);
     nfcWrapper.setAllowWriteReadonly(args);
   });
 
   ipcMain.on('set-permission', (event, args) => {
-    console.log('perm', args);
+    // console.log('perm', args);
     nfcWrapper.setAllowRead(args[0]);
     nfcWrapper.setAllowWrite(args[1]);
     nfcWrapper.setAllowWriteReadonly(args[2]);
   });
 
   ipcMain.on('set-message', (event, args) => {
-    console.log('msg', args);
+    // console.log('msg', args);
     nfcWrapper.setMessage(args);
   });
 }

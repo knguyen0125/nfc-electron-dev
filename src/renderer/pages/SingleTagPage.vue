@@ -39,7 +39,6 @@
 <script>
 import { Component, Watch, Mixins } from 'vue-property-decorator';
 import { ipcRenderer } from 'electron';
-// import { debounce } from 'lodash';
 
 import MainCommunicationMixins from '@/mixins/mainCommunicationMixins';
 import StatusMixins from '@/mixins/statusMixins';
@@ -91,7 +90,7 @@ export default class SingleTagPage extends Mixins(
     }
   }
 
-  // Watches tag message and updates main process
+  // Watches tag message and updates main process of new message
   @Watch('tagMsg')
   onMessageChanged(msg) {
     this.setMessage(msg);

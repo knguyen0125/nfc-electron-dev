@@ -9,19 +9,33 @@ import { isBoolean } from 'util';
 
 /** Wrapper for NFC Reader */
 export default class NFCWrapper extends EventEmitter {
-  // Constants
+  /** @constant {Number} LOCK_PAGE - Address of Lock Page */
   static get LOCK_PAGE() { return 0x02; }
+  /** @constant {Number} CAPABILITY_CONTAINER_PAGE - Address of Capability Container Page */
   static get CAPABILITY_CONTAINER_PAGE() { return 0x03; }
+  /** @constant {Number} DATA_START_PAGE - Address of Start of Data Page */
   static get DATA_START_PAGE() { return 0x04; }
+  /** @constant {Number} BLOCK_SIZE - Number of bytes per Page */
   static get BLOCK_SIZE() { return 4; }
 
-  // Global Methods
+  /** @property {object} NFC - NFC Object */
   nfc = null;
 
+  /** @property {?object[]} readers - Array of Reader Object */
   readers = null;
 
   // Permissions
+  /**
+   * Read Permission
+   * @type {boolean}
+   * @default [false]
+   */
   allowRead = false;
+
+  /**
+   * Sets Read permission
+   * @param {boolean} val - True if allow Read
+   */
   setAllowRead(val) {
     if (isBoolean(val)) {
       this.allowRead = val;
@@ -30,7 +44,17 @@ export default class NFCWrapper extends EventEmitter {
     return this.allowRead;
   }
 
+  /**
+   * Write Permission
+   * @type {boolean}
+   * @default [false]
+   */
   allowWrite = false;
+
+  /**
+   * Sets Write permission
+   * @param {boolean} val - True if allow Write
+   */
   setAllowWrite(val) {
     if (isBoolean(val)) {
       this.allowWrite = val;
@@ -39,7 +63,17 @@ export default class NFCWrapper extends EventEmitter {
     return this.allowWrite;
   }
 
+  /**
+   * Write-Readonly Permission
+   * @type {boolean}
+   * @default [false]
+   */
   allowWriteReadonly = false;
+
+  /**
+   * Sets Write-Readonly permission
+   * @param {boolean} val - True if allow Write-Readonly
+   */
   setAllowWriteReadonly(val) {
     if (isBoolean(val)) {
       this.allowWriteReadonly = val;
@@ -48,20 +82,35 @@ export default class NFCWrapper extends EventEmitter {
     return this.allowWriteReadonly;
   }
 
-  // Messages
+  /**
+   * Message to write to tag
+   * @type {?string}
+   * @default [null]
+   */
   message = null;
-  setMessage(val) {
-    this.message = val;
+
+  /**
+   * Sets message to write to tag
+   * @param {?string} msg - Message to write to tag
+   */
+  setMessage(msg) {
+    this.message = msg;
 
     return this.message;
   }
 
+  /**
+   * Initializes NFCWrapper function
+   * @constructor
+   */
   constructor() {
     super();
 
+    // Initializes NFCWrapper
     this.init();
   }
 
+  /** Initializes NFCWrapper properties */
   init() {
     this.nfc = new NFC();
     this.readers = [];
@@ -71,15 +120,18 @@ export default class NFCWrapper extends EventEmitter {
     this.setMessage(null);
   }
 
+  /**
+   * Starts listening with default configuration
+   */
   startDefault() {
     this.start(this.readerHandler);
 
     return this;
   }
 
-  /** Start with default handler */
+  /** Start listening with custom rader handler */
   start(readerHandler) {
-    // Bind this for correct handler
+    // Bind 'this' to handler
     readerHandler = readerHandler.bind(this);
     this.nfc.on('reader', readerHandler);
 
@@ -91,6 +143,10 @@ export default class NFCWrapper extends EventEmitter {
     return this;
   }
 
+  /**
+   * Default reader handler
+   * @param {object} reader - Reader instance to bind handler to
+   */
   async readerHandler(reader) {
     reader.on('card', async () => {
       const [err, status] = await to(this.handleCard(reader));
@@ -103,23 +159,36 @@ export default class NFCWrapper extends EventEmitter {
       return status;
     });
 
+    // Pushes reader to array of readers
     this.readers.push(reader);
     this.emit('readerconn');
 
+    // Handle errors of reader
     reader.on('error', (err) => {
       this.emit('reader-error', err);
     });
 
+    // Garbage collection
     reader.on('end', () => {
       delete this.readers[this.readers.indexOf(reader)];
       this.emit('readerend');
     });
   }
 
+  /**
+   * Default card handler
+   * @param {object} reader - Reader instance to bind card handler
+   * @returns {object} - Object conaining status of read/write/write-readonly operations
+   */
   async handleCard(reader) {
     const operation = {};
+
+    // If write and write-readonly permissions are set, typically it means
+    // that users want to write the message and lock it right away.
+    // This flag prevents write error that also locks the tag
     let writeError = false;
 
+    // Read handler
     if (this.allowRead) {
       const [err, status] = await to(this.readCard(reader));
       if (err) {
@@ -131,6 +200,7 @@ export default class NFCWrapper extends EventEmitter {
       }
     }
 
+    // Write handler
     if (this.allowWrite) {
       const [err, status] = await to(this.writeCard(reader));
       if (err) {
@@ -145,6 +215,7 @@ export default class NFCWrapper extends EventEmitter {
       }
     }
 
+    // Write-Readonly handler
     if (!writeError && this.allowWriteReadonly) {
       const [err, status] = await to(this.writeReadOnly(reader));
       if (err) {
@@ -159,12 +230,17 @@ export default class NFCWrapper extends EventEmitter {
     return operation;
   }
 
+  /**
+   * Default read card header handler
+   * @param {object} reader - Reader instance to read tag header
+   * @throws Error if unable to read tag header
+   */
   async readHeader(reader) {
     // Read Header from Capability Container
     const [err, header] = await to(
       reader.read(NFCWrapper.CAPABILITY_CONTAINER_PAGE, NFCWrapper.BLOCK_SIZE),
     );
-    if (err) throw new Error('Error Reading tag');
+    if (err) throw new Error('Cannot read tag header');
 
     // Checks the magic header of Capability Conainer (Should be 0xE1).
     // See NFC Forum Type 2 Tags documentation
@@ -198,6 +274,13 @@ export default class NFCWrapper extends EventEmitter {
     };
   }
 
+  /**
+   * Default read card data handler
+   * @param {object} reader - Reader instance to read tag data
+   * @throws Error if cannot read tag header
+   * @throws Error if tag is invalid under NFC Forum Type 2 Specification
+   * @throws Error if cannot read tag data
+   */
   async readCard(reader) {
     const [err, header] = await to(this.readHeader(reader));
     if (err) throw new Error(err);
@@ -208,7 +291,7 @@ export default class NFCWrapper extends EventEmitter {
     };
 
     if (!header.isValid) {
-      throw new Error('Tag is invalid');
+      throw new Error('Malformed Tag Header');
     } else {
       if (header.isReadOnly) {
         tagAttribute['access-level'] = 'Read-only';
@@ -216,6 +299,7 @@ export default class NFCWrapper extends EventEmitter {
         tagAttribute['access-level'] = 'Read-Write';
       }
 
+      // Read tag data
       const [dataErr, data] = await to(reader.read(NFCWrapper.DATA_START_PAGE, header.maxLength));
       if (dataErr) throw new Error(dataErr);
 
@@ -226,6 +310,7 @@ export default class NFCWrapper extends EventEmitter {
         const record = records[i];
 
         try {
+          // Currently only text records are supported
           const { content } = ndef.Utils.resolveTextRecord(record);
           tagAttribute.records.push(content);
         } catch (err) {
@@ -237,6 +322,15 @@ export default class NFCWrapper extends EventEmitter {
     return tagAttribute;
   }
 
+  /**
+   * Default write tag record handler
+   * @param {object} reader - Read instance to write tag data
+   * @throws Error if cannot read tag header
+   * @throws Error if header is malformed
+   * @throws Error if no message is not set or is empty
+   * @throws Error if tag is read-only
+   * @throws Error if cannot write to tag
+   */
   async writeCard(reader) {
     const [err, header] = await to(this.readHeader(reader));
     if (err) throw new Error(err);
@@ -246,7 +340,7 @@ export default class NFCWrapper extends EventEmitter {
     }
 
     if (header.isValid) {
-      if (this.message === null) {
+      if (this.message === null || this.message === '') {
         throw new Error('No Message set.');
       }
 
@@ -264,14 +358,22 @@ export default class NFCWrapper extends EventEmitter {
       return true;
     }
 
-    throw new Error('Malformed Tag header');
+    throw new Error('Malformed Tag Header');
   }
 
+  /**
+   * Default handler to lock tags
+   * Currently only lock 12 pages of data or 48 bytes (subtracting 4-8 bytes of header)
+   * @param {object} reader - Reader instance to lock tag
+   * @throws Error if cannot read from tag
+   * @throws Error if cannot write lock information to tag
+   */
   async writeReadOnly(reader) {
     // Gets information about lock page
     const [err, lockPage] = await to(reader.read(NFCWrapper.LOCK_PAGE, NFCWrapper.BLOCK_SIZE));
     if (err) throw new Error('Error Reading Tag');
 
+    // Sets new lock pages
     const lockBytes = [0xFF, 0xFF];
     const lockBeginPosition = 2;
     lockPage.set(lockBytes, lockBeginPosition);
@@ -289,22 +391,33 @@ export default class NFCWrapper extends EventEmitter {
     const ccBeginPosition = 3;
     ccPage.set(ccBytes, ccBeginPosition);
 
+    // Constructs full lock array
     const fullLock = new Uint8Array(8);
     fullLock.set(lockPage, 0);
     fullLock.set(ccPage, 4);
 
+    // Write lock array to tag
     const [flErr] = await to(reader.write(NFCWrapper.LOCK_PAGE, fullLock));
     if (flErr) throw new Error('Error writing readonly information to tag');
 
     return true;
   }
 
-  /** Construct a valid message TLV for NDEF message */
+  /**
+   * Constructs a wrapper around a NDEF text message
+   * @param {Uint8Array} messageByteArray - NDEF formatted well-known text message
+   * @param {Number} maxLength - Maximum data block length permitted by the tag
+   * @param {Number} blockSize - Number of bytes per page - Default: 4
+   * @throws Error if message is larger than maximum length of tag
+   * @returns Valid NDEF Message with Wrapper
+   */
   static constructMessageNDEF(messageByteArray, maxLength, blockSize = 4) {
+    // Determine valid length of result message (must be divisible by blockSize)
     let validLength = (2 + messageByteArray.length + 1);
     validLength += 4;
     validLength -= validLength % blockSize;
 
+    // Determine if the result message need to be formatted with long-form Length flag
     let longLengthFormat = false;
     if (messageByteArray.length > 0xFE) {
       longLengthFormat = true;
@@ -315,8 +428,10 @@ export default class NFCWrapper extends EventEmitter {
       throw new Error('Length of Message is larger than supported');
     }
 
+    // Constructs result message
     const result = new Uint8Array(validLength);
 
+    // Technically not needed because by default Uint8Array() fill and pad end of block
     result.fill(0); // Fill and pad end of block
 
     result.set([0x03]); // NDEF Message T
@@ -325,11 +440,15 @@ export default class NFCWrapper extends EventEmitter {
       result.set([0xFF], 1); // Length (L)
       result.set([Math.floor(messageByteArray.length / 0x100)], 2);
       result.set([messageByteArray.length % 0x100], 3);
+      // Message block
       result.set(messageByteArray, 4);
+      // Terminator TLV
       result.set([0xFE], 4 + messageByteArray.length);
     } else {
       result.set([messageByteArray.length], 1); // Length (L)
+      // Message block
       result.set(messageByteArray, 2);
+      // Terminator TLV
       result.set([0xFE], 2 + messageByteArray.length);
     }
 

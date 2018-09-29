@@ -118,7 +118,8 @@ export default class MultipleTagPage extends Mixins(
 
       if (fileName === undefined) return;
 
-      // Rebinds this to that
+      // Rebinds this to that since inside the readFile,
+      // this does not bind to current component
       const that = this;
       fs.readFile(fileName[0], 'utf-8', (err, data) => {
         if (err) return;
@@ -151,7 +152,7 @@ export default class MultipleTagPage extends Mixins(
   /* Watches current index. If index changes, updates status */
   @Watch('currentIndex')
   changeIndex(index, oldIndex) {
-    console.log(index, oldIndex);
+    // console.log(index, oldIndex);
     if (index > this.items.length - 1) {
       this.toggleWrite();
       this.changeStatus('Success', 'All Tags Written');

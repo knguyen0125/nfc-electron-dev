@@ -27,18 +27,26 @@
 </template>
 
 <script>
-/* eslint-disable */
-import { Vue, Component, Prop, Watch } from 'vue-property-decorator';
+import {
+  Vue,
+  Component,
+  Prop,
+  Watch,
+} from 'vue-property-decorator';
 
 @Component
-export default class Table extends Vue{
+export default class Table extends Vue {
   @Prop(Array) headers;
   @Prop(Array) items;
   @Prop(Number) currentIndex;
+
+  // Data
   pagination = {};
 
+  // Computed properties
+  // Number of pages in pagination
   get pages() {
-    if (this.pagination.rowsPerPage 
+    if (this.pagination.rowsPerPage
       && this.pagination.totalItems
       && this.pagination.rowsPerPage !== null
       && this.pagination.totalItems !== null
@@ -47,13 +55,15 @@ export default class Table extends Vue{
     return 0;
   }
 
+  // Watches if items changes and update pagination
   @Watch('items', { deep: true })
   changePagination() {
     this.$nextTick(() => {
       this.pagination.totalItems = this.items.length;
-    })
+    });
   }
 
+  // Watches to make sure that page snaps to currentIndex
   @Watch('currentIndex', { deep: true })
   changePage() {
     this.pagination.page = Math.ceil((this.currentIndex + 1) / this.pagination.rowsPerPage);
