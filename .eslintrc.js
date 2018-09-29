@@ -26,7 +26,10 @@ module.exports = {
     'no-multi-assign': 0,
 		'no-debugger': process.env.NODE_ENV === 'production' ? 2 : 0,
     'strict': 0,
-    'lines-between-class-members': 0
+		'lines-between-class-members': 0,
+    'linebreak-style': 0,
+    'class-methods-use-this': 0,
+    'prefer-arrow-callback': 0
 	},
 	settings: {
 		'import/core-modules': [ 

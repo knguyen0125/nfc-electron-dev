@@ -1,6 +1,6 @@
 {
   "name": "electron-vue-template",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Electron-Based Vue Template",
   "main": "index.js",
   "author": "Kien Nguyen",
@@ -8,14 +8,17 @@
   "scripts": {
     "dev": "electron-webpack dev",
     "compile": "electron-webpack",
-    "build": "yarn compile && electron-build",
+    "pack": "electron-builder",
+    "build": "electron-webpack && electron-builder",
     "lint": "eslint --ext .js,.vue -f ./node_modules/eslint-friendly-formatter src",
-    "lint:fix": "eslint --fix --ext .js,.vue -f ./node_modules/eslint-friendly-formatter src"
+    "lint:fix": "eslint --fix --ext .js,.vue -f ./node_modules/eslint-friendly-formatter src",
+    "rebuild": "electron-rebuild"
   },
   "devDependencies": {
     "@babel/plugin-transform-runtime": "^7.1.0",
     "electron": "^3.0.1",
     "electron-builder": "^20.28.4",
+    "electron-rebuild": "^1.8.2",
     "electron-webpack": "^2.3.1",
     "electron-webpack-eslint": "^3.0.0",
     "electron-webpack-vue": "^2.2.1",
@@ -24,6 +27,7 @@
     "eslint-plugin-import": "^2.14.0",
     "eslint-plugin-jsx-a11y": "^6.1.1",
     "eslint-plugin-react": "^7.11.1",
+    "node-abi": "^2.4.4",
     "stylus": "^0.54.5",
     "stylus-loader": "^3.0.2",
     "vue-property-decorator": "^7.1.1",
@@ -34,19 +38,64 @@
     "@babel/plugin-proposal-class-properties": "^7.1.0",
     "@babel/plugin-proposal-decorators": "^7.1.0",
     "@babel/runtime": "^7.0.0",
+    "@taptrack/ndef": "^1.0.3",
+    "lodash": "^4.17.11",
+    "material-design-icons-iconfont": "^3.0.3",
+    "nfc-pcsc": "^0.6.2",
+    "papaparse": "^4.6.0",
     "source-map-support": "^0.5.9",
-    "vue": "^2.5.17"
+    "vue": "^2.5.17",
+    "vue-router": "^3.0.1",
+    "vuetify": "^1.2.5"
   },
   "electronWebpack": {
     "whiteListedModules": [
       "vue-property-decorator",
-      "vue-class-component"
+      "vue-class-component",
+      "vuetify",
+      "papaparse"
     ],
+    "title": "NFC Tools",
     "renderer": {
       "webpackConfig": "webpackConfig/webpack.renderer.additions.js"
     },
     "main": {
       "webpackConfig": "webpackConfig/webpack.main.additions.js"
+    }
+  },
+  "build": {
+    "productName": "nfc-electron",
+    "appId": "miami.fsb.nfcelectron",
+    "directories": {
+      "output": "build"
+    },
+    "files": [
+      "dist/electron/**/*"
+    ],
+    "dmg": {
+      "contents": [
+        {
+          "x": 410,
+          "y": 150,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 130,
+          "y": 150,
+          "type": "file"
+        }
+      ]
+    },
+    "mac": {
+      "icon": "build/icons/icon.icns"
+    },
+    "win": {
+      "target": "portable",
+      "icon": "build/icons/icon.ico"
+    },
+    "linux": {
+      "icon": "build/icons"
     }
   }
 }

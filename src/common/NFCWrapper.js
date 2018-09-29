@@ -7,93 +7,164 @@ import EventEmitter from 'events';
 import to from 'common/to';
 import { isBoolean } from 'util';
 
+/** Wrapper for NFC Reader */
 export default class NFCWrapper extends EventEmitter {
+  // Constants
   static get LOCK_PAGE() { return 0x02; }
   static get CAPABILITY_CONTAINER_PAGE() { return 0x03; }
   static get DATA_START_PAGE() { return 0x04; }
   static get BLOCK_SIZE() { return 4; }
 
   // Global Methods
-  nfc = new NFC();
+  nfc = null;
 
-  readers = [];
+  readers = null;
 
-  allowRead = true;
-  set allowRead(val) {
+  // Permissions
+  allowRead = false;
+  setAllowRead(val) {
     if (isBoolean(val)) {
       this.allowRead = val;
     }
+
+    return this.allowRead;
   }
 
   allowWrite = false;
-  set allowWrite(val) {
+  setAllowWrite(val) {
     if (isBoolean(val)) {
       this.allowWrite = val;
     }
+
+    return this.allowWrite;
   }
 
   allowWriteReadonly = false;
-  set allowWriteReadonly(val) {
+  setAllowWriteReadonly(val) {
     if (isBoolean(val)) {
       this.allowWriteReadonly = val;
     }
+
+    return this.allowWriteReadonly;
   }
 
-  message = '';
-  set message(val) {
+  // Messages
+  message = null;
+  setMessage(val) {
     this.message = val;
+
+    return this.message;
   }
 
   constructor() {
     super();
 
-    this.start();
+    this.init();
   }
 
-  start() {
-    this.nfc.on('reader', async (reader) => {
-      reader.on('card', async () => {
-        const [err, status] = await to(this.handleCard(reader));
-        if (err) throw new Error('Unexpected Tag Error');
+  init() {
+    this.nfc = new NFC();
+    this.readers = [];
+    this.setAllowRead(false);
+    this.setAllowWrite(false);
+    this.setAllowWriteReadonly(false);
+    this.setMessage(null);
+  }
 
-        return status;
-      });
-      this.readers.push(reader);
+  startDefault() {
+    this.start(this.readerHandler);
+
+    return this;
+  }
+
+  /** Start with default handler */
+  start(readerHandler) {
+    // Bind this for correct handler
+    readerHandler = readerHandler.bind(this);
+    this.nfc.on('reader', readerHandler);
+
+    // Handle NFC driver error
+    this.nfc.on('error', (err) => {
+      this.emit('nfc-error', err);
+    });
+
+    return this;
+  }
+
+  async readerHandler(reader) {
+    reader.on('card', async () => {
+      const [err, status] = await to(this.handleCard(reader));
+      if (err) {
+        this.emit('operation-complete', err.message);
+      } else {
+        this.emit('operation-complete', status);
+      }
+
+      return status;
+    });
+
+    this.readers.push(reader);
+    this.emit('readerconn');
+
+    reader.on('error', (err) => {
+      this.emit('reader-error', err);
+    });
+
+    reader.on('end', () => {
+      delete this.readers[this.readers.indexOf(reader)];
+      this.emit('readerend');
     });
   }
 
   async handleCard(reader) {
-    let overallStatus = true;
+    const operation = {};
+    let writeError = false;
+
     if (this.allowRead) {
       const [err, status] = await to(this.readCard(reader));
-      if (err) throw new Error(err.message);
-
-      overallStatus = overallStatus && status;
+      if (err) {
+        operation.read = {
+          error: err.message,
+        };
+      } else {
+        operation.read = status;
+      }
     }
 
     if (this.allowWrite) {
-      const [err, status] = await to(await this.writeCard(reader));
-      if (err) throw new Error(err.message);
-
-      overallStatus = overallStatus && status;
+      const [err, status] = await to(this.writeCard(reader));
+      if (err) {
+        operation.write = {
+          error: err.message,
+        };
+        // If allowWrite is set but write to tag encounter an error
+        // Set writeError so it prevents tag being made read-only
+        writeError = true;
+      } else {
+        operation.write = status;
+      }
     }
 
-    if (this.allowWriteReadonly) {
-      const [err, status] = await to(await this.writeReadOnly(reader));
-      if (err) throw new Error(err.message);
-
-      overallStatus = overallStatus && status;
+    if (!writeError && this.allowWriteReadonly) {
+      const [err, status] = await to(this.writeReadOnly(reader));
+      if (err) {
+        operation.readOnly = {
+          error: err.message,
+        };
+      } else {
+        operation.readOnly = status;
+      }
     }
 
-    return overallStatus;
+    return operation;
   }
 
   async readHeader(reader) {
     // Read Header from Capability Container
     const [err, header] = await to(
-      reader.read(NFCWrapper.CAPABILITY_CONTAINER_PAGE, NFCWrapper.BLOCK_SIZE)
+      reader.read(NFCWrapper.CAPABILITY_CONTAINER_PAGE, NFCWrapper.BLOCK_SIZE),
     );
-    if (err || !header) throw new Error('Error Reading tag');
+    if (err) throw new Error('Error Reading tag');
 
     // Checks the magic header of Capability Conainer (Should be 0xE1).
     // See NFC Forum Type 2 Tags documentation
@@ -115,7 +186,8 @@ export default class NFCWrapper extends EventEmitter {
     // Last nibble indicates write status.
     // 0x00 means full write privilege, 0x0F means no write privilege
     const isReadOnly = (header[3] & 0x0F) === 0x0F; // Last nibble has value of F (1111)
-    // Notes that apparently the readonly flag on Capability Container do not prevent low-level writing
+    // Notes that apparently the readonly flag on
+    // Capability Container do not prevent low-level writing
 
     return {
       isValid,
@@ -128,7 +200,7 @@ export default class NFCWrapper extends EventEmitter {
 
   async readCard(reader) {
     const [err, header] = await to(this.readHeader(reader));
-    if (err || !header) throw new Error(err.message);
+    if (err) throw new Error(err);
 
     const tagAttribute = {
       'access-level': '',
@@ -141,11 +213,11 @@ export default class NFCWrapper extends EventEmitter {
       if (header.isReadOnly) {
         tagAttribute['access-level'] = 'Read-only';
       } else {
-        tagAttribute['access-level'] = 'Read-only';
+        tagAttribute['access-level'] = 'Read-Write';
       }
 
       const [dataErr, data] = await to(reader.read(NFCWrapper.DATA_START_PAGE, header.maxLength));
-      if (dataErr) throw new Error(dataErr.message);
+      if (dataErr) throw new Error(dataErr);
 
       const message = ndef.Message.fromBytes(data);
       const records = message.getRecords();
@@ -154,42 +226,48 @@ export default class NFCWrapper extends EventEmitter {
         const record = records[i];
 
         try {
-          const { content } = ndef.Utils.resolveTextRecords(record);
+          const { content } = ndef.Utils.resolveTextRecord(record);
           tagAttribute.records.push(content);
         } catch (err) {
           // Do nothing - Just ignore non-text-records
         }
       } // for loop
     } // header.isValid
+
+    return tagAttribute;
   }
 
   async writeCard(reader) {
     const [err, header] = await to(this.readHeader(reader));
-    if (err || !header) throw new Error(err.message);
+    if (err) throw new Error(err);
 
     if (header.isReadOnly) {
-      throw new Error('Tag is Read-only, cannot read');
+      throw new Error('Tag is Read-only, cannot write');
     }
 
     if (header.isValid) {
+      if (this.message === null) {
+        throw new Error('No Message set.');
+      }
+
       const NDEFTextRecord = ndef.Utils.createTextRecord(this.message);
       const NDEFMessage = new ndef.Message([NDEFTextRecord]);
 
-      const byteStream = this.constructore.construcMessageNDEF(
+      const byteStream = this.constructor.constructMessageNDEF(
         NDEFMessage.toByteArray(),
         header.maxLength,
       );
 
-      const [err, writeStatus] = await to(reader.write(NFCWrapper.DATA_START_PAGE, byteStream));
+      const [err] = await to(reader.write(NFCWrapper.DATA_START_PAGE, byteStream));
       if (err) throw new Error('Error Writing to Tag');
 
-      return writeStatus;
+      return true;
     }
 
     throw new Error('Malformed Tag header');
   }
 
-  async writeReadonly(reader) {
+  async writeReadOnly(reader) {
     // Gets information about lock page
     const [err, lockPage] = await to(reader.read(NFCWrapper.LOCK_PAGE, NFCWrapper.BLOCK_SIZE));
     if (err) throw new Error('Error Reading Tag');
@@ -215,14 +293,14 @@ export default class NFCWrapper extends EventEmitter {
     fullLock.set(lockPage, 0);
     fullLock.set(ccPage, 4);
 
-    const [flErr, status] = await to(reader.write(NFCWrapper.LOCK_PAGE, fullLock));
+    const [flErr] = await to(reader.write(NFCWrapper.LOCK_PAGE, fullLock));
     if (flErr) throw new Error('Error writing readonly information to tag');
 
-    return status;
+    return true;
   }
 
   /** Construct a valid message TLV for NDEF message */
-  static construcMessageNDEF(messageByteArray, maxLength, blockSize = 4) {
+  static constructMessageNDEF(messageByteArray, maxLength, blockSize = 4) {
     let validLength = (2 + messageByteArray.length + 1);
     validLength += 4;
     validLength -= validLength % blockSize;
